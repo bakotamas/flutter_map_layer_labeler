@@ -59,7 +59,8 @@ class LabelFader extends ChangeNotifier {
       e.visible = false;
     }
     placed.forEach((key, placer) {
-      _entries[key] ??= _FadeEntry(key, placer)
+      // Not a cascade on `??=`: that would update only the new entries.
+      (_entries[key] ??= _FadeEntry(key, placer))
         ..placer = placer
         ..visible = true;
     });
