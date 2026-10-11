@@ -133,6 +133,7 @@ class LabelCollisionController extends ChangeNotifier {
   _Snapshot? _snap;
   bool _dirty = true;
   bool _scheduled = false;
+  bool _disposed = false;
 
   final _hiddenMarkers = <LabelLayerHost, Set<int>>{};
 
@@ -209,16 +210,25 @@ class LabelCollisionController extends ChangeNotifier {
 
   /// Schedules a recomputation on the next frame if needed.
   void _schedule() {
-    if (_scheduled || _latest == null) return;
+    if (_disposed || _scheduled || _latest == null) return;
     _scheduled = true;
     SchedulerBinding.instance
       ..addPostFrameCallback((_) => _recompute())
       ..scheduleFrame();
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   /// Recompute the label placements.
   void _recompute() {
     _scheduled = false;
+    // The layers detach (and so schedule a recomputation) right before the
+    // owner disposes the controller.
+    if (_disposed) return;
     final cam = _latest;
     if (cam == null) return;
 

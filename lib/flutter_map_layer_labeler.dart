@@ -14,6 +14,7 @@ export 'src/labeled_polygon_layer.dart'
         PolygonPriorityCallback;
 export 'src/labeled_polyline_layer.dart'
     show
+        LabelAlignment,
         LabeledPolyline,
         LabeledPolylineLayer,
         PolylineLabelStyleCallback,
