@@ -107,6 +107,12 @@ class LabelRenderer {
   /// A cache for the glyphs of label texts by their style.
   final _runCache = <(String, LabelStyle), GlyphRun>{};
 
+  /// A cache for the widgets of label texts by their style.
+  ///
+  /// A label gets the same widget instance at every build, so the framework
+  /// does not build (and lay out) its text again while the map moves.
+  final _textCache = <(String, LabelStyle?), Widget>{};
+
   /// The base text style of the labels (the defaults of the context).
   TextStyle? _baseStyle;
 
@@ -124,13 +130,14 @@ class LabelRenderer {
     return true;
   }
 
-  /// Forgets the measured sizes and glyphs.
+  /// Forgets the measured sizes, glyphs and text widgets.
   ///
   /// The glyph painters are not disposed here: labels that are fading out may
   /// still paint them. They are released with the renderer.
   void clearCache() {
     _sizeCache.clear();
     _runCache.clear();
+    _textCache.clear();
   }
 
   /// Releases the glyph painters. Call it when the owner layer is disposed.
@@ -273,7 +280,10 @@ class LabelRenderer {
   /// The widget of [label], to be positioned (and turned) by the caller to
   /// the resolved size.
   Widget content(Label label, LabelStyle? style) => switch (label) {
-    TextLabel(:final text) => _text(text, style),
+    TextLabel(:final text) => _textCache.putIfAbsent((
+      text,
+      style,
+    ), () => _text(text, style)),
     WidgetLabel(:final widget, :final ignorePointer) => IgnorePointer(
       ignoring: ignorePointer,
       child: widget,

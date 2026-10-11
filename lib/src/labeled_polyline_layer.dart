@@ -134,6 +134,11 @@ class LabeledPolylineLayer<T> extends StatefulWidget {
     this.simplificationTolerance = 10,
     this.simplificationMinPoints = 300,
     this.labelFadeDuration = const Duration(milliseconds: 200),
+    this.polylineSimplificationTolerance = .3,
+    this.cullingMargin = 10,
+    this.drawInSingleWorld = false,
+    this.hitNotifier,
+    this.minimumHitbox = 10,
   }) : assert(labelRepeat == null || labelRepeat > 0),
        assert(maxLabelsPerLine >= 1 && maxLabelsPerLine <= _anchorStride),
        assert(cornerRadius >= 0);
@@ -252,6 +257,28 @@ class LabeledPolylineLayer<T> extends StatefulWidget {
   /// [Duration.zero] turns the animation off.
   final Duration labelFadeDuration;
 
+  /// The [PolylineLayer.simplificationTolerance] of the layer that draws the
+  /// lines: a higher value draws fewer points, so it is faster, but less
+  /// accurate. 0 turns the simplification off.
+  ///
+  /// It has nothing to do with [simplificationTolerance], which only affects
+  /// the label placement.
+  final double polylineSimplificationTolerance;
+
+  /// The [PolylineLayer.cullingMargin] of the layer that draws the lines.
+  final double? cullingMargin;
+
+  /// The [PolylineLayer.drawInSingleWorld] of the layer that draws the lines.
+  final bool drawInSingleWorld;
+
+  /// The [PolylineLayer.hitNotifier] of the layer that draws the lines.
+  ///
+  /// Only the lines can be hit, not their labels.
+  final LayerHitNotifier<Object>? hitNotifier;
+
+  /// The [PolylineLayer.minimumHitbox] of the layer that draws the lines.
+  final double minimumHitbox;
+
   @override
   State<LabeledPolylineLayer<T>> createState() =>
       _LabeledPolylineLayerState<T>();
@@ -264,6 +291,8 @@ class _LineLabel {
     this.run,
     this.bounds,
     this.points,
+    this.cumulative,
+    this.zoom,
     this.gap,
     this.fractions,
   );
@@ -273,6 +302,13 @@ class _LineLabel {
   /// The points the label positions were calculated on (possibly simplified).
   /// The painting uses the same points, so a label does not shift.
   final List<LatLng> points;
+
+  /// The lengths of the line on the screen from its start to each of the
+  /// [points] (see [ScreenPath.cumulative]), at the [zoom] of the recalculation.
+  final List<double> cumulative;
+
+  /// The zoom the [cumulative] lengths were measured at.
+  final double zoom;
 
   /// The glyphs, if the text follows the line.
   final GlyphRun? run;
@@ -286,6 +322,29 @@ class _LineLabel {
   /// The places of the labels as fractions of the line length:
   /// `fractions[repeat][slot]`. A repeat without a usable place has an empty list.
   final List<List<double>> fractions;
+
+  /// The part of the line between the distances [d0] and [d1] on the screen
+  /// of [camera], and the distance of the line where that part starts.
+  ///
+  /// [scale] is the ratio of the lengths of the line on the screen of [camera]
+  /// to the [cumulative] ones. A zoom only scales the line, so the lengths do
+  /// not have to be measured again: only the points of the part are projected,
+  /// not the whole line.
+  (ScreenPath, double) part(
+    MapCamera camera,
+    double scale,
+    double d0,
+    double d1,
+  ) {
+    final from = ScreenPath.segmentIndex(cumulative, d0 / scale);
+    final to = ScreenPath.segmentIndex(cumulative, d1 / scale) + 1;
+    return (
+      ScreenPath([
+        for (var i = from; i <= to; i++) camera.latLngToScreenOffset(points[i]),
+      ]),
+      cumulative[from] * scale,
+    );
+  }
 }
 
 /// A simplified line, reused until the zoom changes noticeably.
@@ -699,7 +758,16 @@ class _LabeledPolylineLayerState<T> extends State<LabeledPolylineLayer<T>>
         );
       }
       if (candidates.isEmpty) continue;
-      _entries[i] = _LineLabel(res, run, bounds, usedPoints, gap, fractions);
+      _entries[i] = _LineLabel(
+        res,
+        run,
+        bounds,
+        usedPoints,
+        path.cumulative,
+        camera.zoom,
+        gap,
+        fractions,
+      );
       out.addAll(candidates);
     }
     return out;
@@ -804,24 +872,23 @@ class _LabeledPolylineLayerState<T> extends State<LabeledPolylineLayer<T>>
   ) => (camera) {
     final viewport = Offset.zero & camera.size;
     if (!e.bounds.screenRect(camera).overlaps(viewport)) return null;
-    final path = ScreenPath([
-      for (final p in e.points) camera.latLngToScreenOffset(p),
-    ]);
-    if (path.length <= 0) return null;
+    final scale = camera.getZoomScale(camera.zoom, e.zoom);
+    final length = e.cumulative.last * scale;
+    if (length <= 0) return null;
 
     final size = e.res.size;
-    final c = _centerDistance(fraction, path.length, size.width);
-
     final run = e.run;
+    final radius = run == null ? 0.0 : cornerRadius * run.height;
+    // Only the part of the line the label lies on is projected (see
+    // [_curvedPart] for its length), with a pixel to spare on both sides.
+    final center = _centerDistance(fraction, length, size.width);
+    final reach = size.width / 2 + 2 * radius + 1;
+    final (path, start) = e.part(camera, scale, center - reach, center + reach);
+    final c = center - start;
+
     if (run != null) {
       final shift = _shift(alignment, run.height / 2, e.gap);
-      final part = _curvedPart(
-        path,
-        c,
-        size.width,
-        shift,
-        cornerRadius * run.height,
-      );
+      final part = _curvedPart(path, c, size.width, shift, radius);
       final r = ShapeGeometry.boundsOf(part).inflate(size.height / 2 + 2);
       if (!r.overlaps(viewport)) return null;
       return PlacedLabel(
@@ -897,7 +964,14 @@ class _LabeledPolylineLayerState<T> extends State<LabeledPolylineLayer<T>>
 
   @override
   Widget build(BuildContext context) {
-    final lines = PolylineLayer(polylines: _plainLines);
+    final lines = PolylineLayer(
+      polylines: _plainLines,
+      simplificationTolerance: widget.polylineSimplificationTolerance,
+      cullingMargin: widget.cullingMargin,
+      drawInSingleWorld: widget.drawInSingleWorld,
+      hitNotifier: widget.hitNotifier,
+      minimumHitbox: widget.minimumHitbox,
+    );
     if (!widget.displayLabels) return lines;
     return Stack(
       fit: .expand,

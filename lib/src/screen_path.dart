@@ -25,8 +25,12 @@ class ScreenPath {
 
   /// The index of the segment (`points[i]`-`points[i + 1]`) that contains the
   /// distance [d]. Distances outside the path give the first or last segment.
-  int _segmentAt(double d) {
-    var lo = 0, hi = points.length - 2;
+  int _segmentAt(double d) => segmentIndex(cumulative, d);
+
+  /// The index of the segment that contains the distance [d] of a path with
+  /// the given [cumulative] lengths (see [ScreenPath.cumulative]).
+  static int segmentIndex(List<double> cumulative, double d) {
+    var lo = 0, hi = cumulative.length - 2;
     while (lo < hi) {
       final mid = (lo + hi + 1) >> 1;
       if (cumulative[mid] <= d) {

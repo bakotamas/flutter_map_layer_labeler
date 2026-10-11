@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -108,6 +109,12 @@ class LabeledPolygonLayer<T> extends StatefulWidget {
     this.labelAnchor = .centroid,
     this.hideLabelIfLargerThanPolygon = true,
     this.labelFadeDuration = const Duration(milliseconds: 200),
+    this.polygonSimplificationTolerance = .3,
+    this.useAltRendering = false,
+    this.polygonCulling = true,
+    this.drawInSingleWorld = false,
+    this.painterFillMethod = kIsWeb ? .evenOdd : .pathCombine,
+    this.hitNotifier,
   });
 
   /// The controller that manages label collisions for this layer.
@@ -160,6 +167,28 @@ class LabeledPolygonLayer<T> extends StatefulWidget {
   ///
   /// [Duration.zero] turns the animation off.
   final Duration labelFadeDuration;
+
+  /// The [PolygonLayer.simplificationTolerance] of the layer that draws the
+  /// polygons: a higher value draws fewer points, so it is faster, but less
+  /// accurate. 0 turns the simplification off.
+  final double polygonSimplificationTolerance;
+
+  /// The [PolygonLayer.useAltRendering] of the layer that draws the polygons.
+  final bool useAltRendering;
+
+  /// The [PolygonLayer.polygonCulling] of the layer that draws the polygons.
+  final bool polygonCulling;
+
+  /// The [PolygonLayer.drawInSingleWorld] of the layer that draws the polygons.
+  final bool drawInSingleWorld;
+
+  /// The [PolygonLayer.painterFillMethod] of the layer that draws the polygons.
+  final PolygonPainterFillMethod painterFillMethod;
+
+  /// The [PolygonLayer.hitNotifier] of the layer that draws the polygons.
+  ///
+  /// Only the polygons can be hit, not their labels.
+  final LayerHitNotifier<Object>? hitNotifier;
 
   @override
   State<LabeledPolygonLayer<T>> createState() => _LabeledPolygonLayerState<T>();
@@ -357,7 +386,15 @@ class _LabeledPolygonLayerState<T> extends State<LabeledPolygonLayer<T>>
 
   @override
   Widget build(BuildContext context) {
-    final shapes = PolygonLayer(polygons: _plainPolygons);
+    final shapes = PolygonLayer(
+      polygons: _plainPolygons,
+      simplificationTolerance: widget.polygonSimplificationTolerance,
+      useAltRendering: widget.useAltRendering,
+      polygonCulling: widget.polygonCulling,
+      drawInSingleWorld: widget.drawInSingleWorld,
+      painterFillMethod: widget.painterFillMethod,
+      hitNotifier: widget.hitNotifier,
+    );
     if (!widget.displayLabels) return shapes;
     return Stack(
       fit: .expand,

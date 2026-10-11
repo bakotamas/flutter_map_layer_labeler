@@ -25,11 +25,14 @@ const _minCityPopulation = 100000;
 const _maxRiverRank = 8;
 
 /// Douglas–Peucker tolerance of the rivers, in scaled units.
-const _riverTolerance = 4.0;
+const _riverTolerance = 20.0;
+
+/// Douglas–Peucker tolerance of the borders of the countries, in scaled units.
+const _countryTolerance = 20.0;
 
 /// Parts of a country smaller than this (in scaled units, both ways) are left
 /// out, unless they are the largest part of the country.
-const _minPartExtent = 60;
+const _minPartExtent = 300;
 
 typedef _Pt = (int, int);
 
@@ -72,10 +75,8 @@ void _write(String name, Object data) {
   );
 }
 
-_Pt _pt(List<dynamic> c) => (
-  ((c[0] as num) * _scale).round(),
-  ((c[1] as num) * _scale).round(),
-);
+_Pt _pt(List<dynamic> c) =>
+    (((c[0] as num) * _scale).round(), ((c[1] as num) * _scale).round());
 
 /// Scales the coordinates and drops the repeated points.
 List<_Pt> _line(List<dynamic> coordinates) {
@@ -173,7 +174,9 @@ List<Map<String, Object>> _rivers(List<Map<String, dynamic>> features) {
 /// Joins the lines that continue each other. The rank of a joined line is the
 /// best (lowest) one of its parts.
 List<(int, List<_Pt>)> _join(List<(int, List<_Pt>)> parts) {
-  final chains = [for (final (r, l) in parts) (r, [...l])];
+  final chains = [
+    for (final (r, l) in parts) (r, [...l]),
+  ];
   var merged = true;
   while (merged) {
     merged = false;
@@ -248,7 +251,7 @@ double _distance(_Pt p, _Pt a, _Pt b) {
 /// holes), the largest part of the country is the first one.
 List<Map<String, Object>> _countries(List<Map<String, dynamic>> features) {
   final out = <Map<String, Object>>[];
-  var points = 0;
+  final all = <List<List<List<_Pt>>>>[];
   for (final f in features) {
     final p = f['properties'] as Map<String, dynamic>;
     final g = f['geometry'] as Map<String, dynamic>;
@@ -272,25 +275,114 @@ List<Map<String, Object>> _countries(List<Map<String, dynamic>> features) {
       for (final (i, (_, rings)) in parts.indexed)
         if (i == 0 || !_isTiny(rings.first)) rings,
     ];
-    for (final rings in kept) {
-      for (final ring in rings) {
-        points += ring.length;
-      }
-    }
+    all.add(kept);
     out.add({
       'n': p['NAME'] as String,
       'c': p['CONTINENT'] as String,
       'pop': (p['POP_EST'] as num).round(),
       'a': parts.fold(0.0, (sum, part) => sum + part.$1).round(),
       'col': (p['MAPCOLOR7'] as num).round(),
-      'g': [
-        for (final rings in kept) [for (final ring in rings) _encode(ring)],
-      ],
     });
   }
+
+  // The borders are simplified after all countries are known, so the two
+  // sides of a shared border stay the same.
+  final junctions = _junctions([
+    for (final parts in all)
+      for (final rings in parts) ...rings,
+  ]);
+  var before = 0, after = 0;
+  for (final (i, parts) in all.indexed) {
+    out[i]['g'] = [
+      for (final rings in parts)
+        [
+          for (final ring in rings)
+            if (_simplifyRing(ring, junctions, _countryTolerance)
+                case final simple)
+              () {
+                before += ring.length;
+                after += simple.length;
+                return _encode(simple);
+              }(),
+        ],
+    ];
+  }
   out.sort((a, b) => (a['n']! as String).compareTo(b['n']! as String));
-  stdout.writeln('countries: $points points');
+  stdout.writeln('countries: $before points simplified to $after');
   return out;
+}
+
+bool _less(_Pt a, _Pt b) => a.$1 != b.$1 ? a.$1 < b.$1 : a.$2 < b.$2;
+
+/// The points where more than two borders meet (for example the common point
+/// of three countries, or the end of a border at the sea). They are kept by
+/// the simplification, and the borders are simplified between them.
+Set<_Pt> _junctions(List<List<_Pt>> rings) {
+  final neighbors = <_Pt, Set<_Pt>>{};
+  for (final ring in rings) {
+    // The last point of a ring is its first point again.
+    final n = ring.length - 1;
+    for (var i = 0; i < n; i++) {
+      (neighbors[ring[i]] ??= {})
+        ..add(ring[(i + n - 1) % n])
+        ..add(ring[(i + 1) % n]);
+    }
+  }
+  return {
+    for (final MapEntry(:key, :value) in neighbors.entries)
+      if (value.length > 2) key,
+  };
+}
+
+/// Douglas–Peucker simplification of a closed [ring], part by part between
+/// its [junctions].
+///
+/// A part gives the same result in every ring it is in (whatever point the
+/// ring starts at, and whichever way it goes around), so no gap opens between
+/// two neighbor countries.
+List<_Pt> _simplifyRing(List<_Pt> ring, Set<_Pt> junctions, double tolerance) {
+  if (tolerance <= 0) return ring;
+  final n = ring.length - 1;
+  var fixed = [
+    for (var i = 0; i < n; i++)
+      if (junctions.contains(ring[i])) i,
+  ];
+  if (fixed.isEmpty) {
+    // A ring without junctions (an island, or an enclave and the hole around
+    // it) is cut at two points that do not depend on where it starts.
+    var first = 0;
+    for (var i = 1; i < n; i++) {
+      if (_less(ring[i], ring[first])) first = i;
+    }
+    var far = first, worst = -1.0;
+    for (var i = 0; i < n; i++) {
+      final d = _distance(ring[i], ring[first], ring[first]);
+      if (d > worst) {
+        worst = d;
+        far = i;
+      }
+    }
+    fixed = [first, far]..sort();
+  }
+
+  final out = <_Pt>[];
+  for (var k = 0; k < fixed.length; k++) {
+    final from = fixed[k];
+    var to = fixed[(k + 1) % fixed.length];
+    if (to <= from) to += n;
+    var part = [for (var i = from; i <= to; i++) ring[i % n]];
+    // Always simplified in the same direction.
+    final a = part.first == part.last ? part[1] : part.first;
+    final b = part.first == part.last ? part[part.length - 2] : part.last;
+    final reversed = _less(b, a);
+    if (reversed) part = part.reversed.toList();
+    part = _simplify(part, tolerance);
+    if (reversed) part = part.reversed.toList();
+    out.addAll(part.take(part.length - 1));
+  }
+  out.add(out.first);
+  // A ring needs at least three different points.
+  return out.length < 4 ? ring : out;
 }
 
 bool _isTiny(List<_Pt> ring) {
