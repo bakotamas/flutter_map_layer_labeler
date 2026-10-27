@@ -68,17 +68,41 @@ final _markers = [
 double _priorityOf(LabeledMarker<Poi> m) => m.data?.importance ?? 0;
 ```
 
-A marker with a widget label. The collision detection needs the size before the widget is laid out, so it has to be provided, and the widget is given exactly this size:
+A text label can have several lines: it is broken only at its line breaks (`\n`), and its lines are aligned to the edge that faces the marker. A rich text label takes a `TextSpan`, whose styles are merged onto the label style (`WidgetSpan`s are not supported):
+
+```dart
+LabeledMarker<Poi>.rich(
+  marker: marker,
+  labelSpan: TextSpan(
+    text: '${poi.name}\n',
+    children: [
+      TextSpan(
+        text: poi.category,
+        style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic),
+      ),
+    ],
+  ),
+)
+```
+
+A text that follows a polyline (`LabeledPolylineLayer.followLine`) is painted in one line: its line breaks become spaces.
+
+A marker with a widget label. The collision detection needs the size before the widget is laid out, so it has to be provided, and the widget is given exactly this size. The builder gets the edge of the label that faces the marker at its current placement (for example `Alignment.centerLeft` when the label is on the right side of the marker), so the content can lean towards the marker:
 
 ```dart
 LabeledMarker<Poi>.widget(
   marker: marker,
-  labelWidget: const Chip(label: Text('Open now')),
+  labelBuilder: (context, alignment) => Align(
+    alignment: alignment,
+    child: const Chip(label: Text('Open now')),
+  ),
   labelSize: const Size(96, 32),
   ignorePointer: false, // the label can receive taps
   spacing: 4,
 )
 ```
+
+On a polyline the builder gets `Alignment.center`, `bottomCenter` or `topCenter` (on, above or below the line), on a polygon always `Alignment.center`.
 
 A marker without a label still blocks the labels of other markers. To get one, set `label` to `null` (the unnamed `LabeledMarker` constructors always create a label).
 

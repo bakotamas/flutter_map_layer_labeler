@@ -60,6 +60,9 @@ class LabeledPolyline<T> {
   });
 
   /// Creates a labeled polyline with the specified polyline, text label, and optional additional data.
+  ///
+  /// The text may contain line breaks, except if it follows the line (see
+  /// [LabeledPolylineLayer.followLine]): then they are replaced by spaces.
   factory({
     required Polyline polyline,
     required String labelText,
@@ -70,10 +73,27 @@ class LabeledPolyline<T> {
     data: data,
   );
 
+  /// Creates a labeled polyline with the specified polyline, rich text label, and optional additional data.
+  ///
+  /// See [TextLabel.rich] for the details.
+  factory rich({
+    required Polyline polyline,
+    required TextSpan labelSpan,
+    T? data,
+  }) => LabeledPolyline._(
+    polyline: polyline,
+    label: TextLabel.rich(labelSpan),
+    data: data,
+  );
+
   /// Creates a labeled polyline with the specified polyline, sized widget label, and optional additional data.
+  ///
+  /// [labelBuilder] gets the edge of the label that faces the line (see
+  /// [LabeledPolylineLayer.labelAlignment]): [Alignment.center] on the line,
+  /// [Alignment.bottomCenter] above it and [Alignment.topCenter] below it.
   factory widget({
     required Polyline polyline,
-    required Widget labelWidget,
+    required LabelWidgetBuilder labelBuilder,
     required Size labelSize,
     T? data,
     bool ignorePointer = false,
@@ -81,7 +101,7 @@ class LabeledPolyline<T> {
   }) => LabeledPolyline._(
     polyline: polyline,
     label: WidgetLabel(
-      labelWidget,
+      labelBuilder,
       labelSize,
       ignorePointer: ignorePointer,
       spacing: spacing,
@@ -395,6 +415,13 @@ double _shift(LabelAlignment alignment, double halfHeight, double gap) =>
       .belowLine => -(halfHeight + gap),
     };
 
+/// The edge of a label that faces the line.
+Alignment _labelAlignment(LabelAlignment alignment) => switch (alignment) {
+  .onLine => Alignment.center,
+  .aboveLine => Alignment.bottomCenter,
+  .belowLine => Alignment.topCenter,
+};
+
 /// The center and the angle of a straight label centered at [c] on [path].
 ///
 /// Above or below the line the label is moved along the normal of the line
@@ -700,7 +727,14 @@ class _LabeledPolylineLayerState<T> extends State<LabeledPolylineLayer<T>>
       // A label is on the line, so a line outside the area has no label there.
       if (!bounds.screenRect(camera).overlaps(area)) continue;
 
-      final res = _renderer.resolve(context, lp, label, () => _getStyleFor(lp));
+      // A text that follows the line is painted (so measured) in one line.
+      final res = _renderer.resolve(
+        context,
+        lp,
+        label,
+        () => _getStyleFor(lp),
+        singleLine: _curved,
+      );
       if (res.size.isEmpty) continue;
 
       // The positions belong to the whole line, not to its visible part.
@@ -714,7 +748,7 @@ class _LabeledPolylineLayerState<T> extends State<LabeledPolylineLayer<T>>
       final onScreen = _visibleRange(path, Offset.zero & camera.size);
 
       final run = _curved && label is TextLabel
-          ? _renderer.glyphRun(context, label.text, res.style!)
+          ? _renderer.glyphRun(context, label.span, res.style!)
           : null;
       final gap = _halfStroke(lp.polyline) + res.spacing;
 
@@ -920,7 +954,7 @@ class _LabeledPolylineLayerState<T> extends State<LabeledPolylineLayer<T>>
         width: size.width,
         height: size.height,
       ),
-      _renderer.content(label, e.res.style),
+      _renderer.content(label, e.res.style, _labelAlignment(alignment)),
       angle: p.angle,
     );
   };

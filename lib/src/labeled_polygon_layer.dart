@@ -43,6 +43,8 @@ class LabeledPolygon<T> {
   });
 
   /// Creates a labeled polygon with the specified polygon, text label, and optional additional data.
+  ///
+  /// The text may contain line breaks.
   factory({
     required Polygon polygon,
     required String labelText,
@@ -53,17 +55,32 @@ class LabeledPolygon<T> {
     data: data,
   );
 
+  /// Creates a labeled polygon with the specified polygon, rich text label, and optional additional data.
+  ///
+  /// See [TextLabel.rich] for the details.
+  factory rich({
+    required Polygon polygon,
+    required TextSpan labelSpan,
+    T? data,
+  }) => LabeledPolygon._(
+    polygon: polygon,
+    label: TextLabel.rich(labelSpan),
+    data: data,
+  );
+
   /// Creates a labeled polygon with the specified polygon, sized widget label, and optional additional data.
+  ///
+  /// The label is on the polygon, so [labelBuilder] always gets [Alignment.center].
   factory widget({
     required Polygon polygon,
-    required Widget labelWidget,
+    required LabelWidgetBuilder labelBuilder,
     required Size labelSize,
     T? data,
     bool ignorePointer = false,
   }) => LabeledPolygon._(
     polygon: polygon,
     label: WidgetLabel(
-      labelWidget,
+      labelBuilder,
       labelSize,
       ignorePointer: ignorePointer,
     ),
@@ -360,7 +377,10 @@ class _LabeledPolygonLayerState<T> extends State<LabeledPolygonLayer<T>>
       height: e.res.size.height,
     );
     if (!r.overlaps(Offset.zero & camera.size)) return null;
-    return PlacedLabel(r, _renderer.content(label, e.res.style));
+    return PlacedLabel(
+      r,
+      _renderer.content(label, e.res.style, Alignment.center),
+    );
   };
 
   /// Labels live in their own screen-space overlay above the polygons.

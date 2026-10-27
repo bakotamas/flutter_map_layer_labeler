@@ -5,7 +5,30 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 
 /// The side of the marker where the label is placed.
-enum LabelSide { bottom, top, right, left }
+enum LabelSide {
+  bottom,
+  top,
+  right,
+  left;
+
+  /// The edge of a label on this side that faces the marker.
+  Alignment get labelAlignment => switch (this) {
+    bottom => Alignment.topCenter,
+    top => Alignment.bottomCenter,
+    right => Alignment.centerLeft,
+    left => Alignment.centerRight,
+  };
+}
+
+/// Builds the content of a [WidgetLabel].
+///
+/// [alignment] is the edge of the label that faces its item at the current
+/// placement: for example [Alignment.centerLeft] if the label is on the right
+/// side of its marker, or [Alignment.center] if it is on its item.
+typedef LabelWidgetBuilder = Widget Function(
+  BuildContext context,
+  Alignment alignment,
+);
 
 /// Wrapper class that associates a marker with a label and additional data.
 class LabeledMarker<T> {
@@ -16,6 +39,8 @@ class LabeledMarker<T> {
   });
 
   /// Creates a labeled marker with the specified marker, text label, and optional additional data.
+  ///
+  /// The text may contain line breaks.
   factory({
     required Marker marker,
     required String labelText,
@@ -26,10 +51,26 @@ class LabeledMarker<T> {
     data: data,
   );
 
+  /// Creates a labeled marker with the specified marker, rich text label, and optional additional data.
+  ///
+  /// See [TextLabel.rich] for the details.
+  factory rich({
+    required Marker marker,
+    required TextSpan labelSpan,
+    T? data,
+  }) => LabeledMarker._(
+    marker: marker,
+    label: TextLabel.rich(labelSpan),
+    data: data,
+  );
+
   /// Creates a labeled marker with the specified marker, sized widget label, and optional additional data.
+  ///
+  /// [labelBuilder] gets the edge of the label that faces the marker (see
+  /// [LabelSide.labelAlignment]) at the current placement.
   factory widget({
     required Marker marker,
-    required Widget labelWidget,
+    required LabelWidgetBuilder labelBuilder,
     required Size labelSize,
     T? data,
     bool ignorePointer = false,
@@ -37,7 +78,7 @@ class LabeledMarker<T> {
   }) => LabeledMarker._(
     marker: marker,
     label: WidgetLabel(
-      labelWidget,
+      labelBuilder,
       labelSize,
       ignorePointer: ignorePointer,
       spacing: spacing,
@@ -63,15 +104,33 @@ sealed class Label {
   const new();
 }
 
-/// A label that contains plain text.
+/// A label that contains plain or rich text.
 ///
 /// Styled by [LabeledMarkerLayer.labelStyle] or by the result of
 /// [LabeledMarkerLayer.labelStyleCallback].
+///
+/// The text is broken into lines only at its line breaks. Several lines are
+/// aligned to the edge of the label that faces its item (centered on the item
+/// itself). A text that follows a line (see [LabeledPolylineLayer.followLine])
+/// is painted in one line: its line breaks become spaces.
 class TextLabel extends Label {
-  const new(this.text);
+  /// Creates a label of plain [text].
+  new(String text) : span = TextSpan(text: text);
 
-  /// The text content of the label.
-  final String text;
+  /// Creates a label of rich text.
+  ///
+  /// The styles of [span] are merged onto the text style of the [LabelStyle],
+  /// and the halo of the style is drawn around every part of the text.
+  /// [WidgetSpan]s are not supported: they are left out. The labels never
+  /// receive pointer events, so the gesture recognizers of the spans are not
+  /// called.
+  const new rich(this.span);
+
+  /// The content of the label.
+  final TextSpan span;
+
+  /// The text content of the label, without the styles.
+  String get text => span.toPlainText(includeSemanticsLabels: false);
 }
 
 /// A label that contains a sized widget.
@@ -79,14 +138,17 @@ class TextLabel extends Label {
 /// The widget is drawn as is: [LabelStyle] has no effect on it.
 class WidgetLabel extends Label {
   const new(
-    this.widget,
+    this.builder,
     this.size, {
     this.ignorePointer = false,
     this.spacing = 2,
   });
 
-  /// The widget content of the label.
-  final Widget widget;
+  /// Builds the widget content of the label for the current placement.
+  ///
+  /// The widget is built again only when the label gets a different
+  /// alignment, not while the map moves.
+  final LabelWidgetBuilder builder;
 
   /// The size of the widget label.
   final Size size;

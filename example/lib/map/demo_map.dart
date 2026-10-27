@@ -168,7 +168,7 @@ class _DemoMapState extends State<DemoMap> {
             .text => LabeledMarker(marker: marker, labelText: c.name, data: c),
             .widget => LabeledMarker.widget(
               marker: marker,
-              labelWidget: CityChip(city: c, onTap: _showCity),
+              labelBuilder: (_, _) => CityChip(city: c, onTap: _showCity),
               labelSize: CityChip.sizeOf(c),
               ignorePointer: !s.widgetLabelsTappable,
               spacing: s.widgetSpacing,
@@ -248,7 +248,7 @@ class _DemoMapState extends State<DemoMap> {
           if (s.labelKind == LabelKind.widget && r.name.isNotEmpty)
             LabeledPolyline.widget(
               polyline: line,
-              labelWidget: RiverTag(river: r),
+              labelBuilder: (_, _) => RiverTag(river: r),
               labelSize: RiverTag.sizeOf(r),
               ignorePointer: true,
               spacing: s.widgetSpacing,
@@ -305,7 +305,7 @@ class _DemoMapState extends State<DemoMap> {
                 ),
                 .widget => LabeledPolygon.widget(
                   polygon: polygon,
-                  labelWidget: CountryCard(country: c),
+                  labelBuilder: (_, _) => CountryCard(country: c),
                   labelSize: CountryCard.sizeOf(c),
                   ignorePointer: true,
                   data: c,

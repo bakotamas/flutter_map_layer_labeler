@@ -299,7 +299,10 @@ class _LabeledMarkerLayerState<T> extends State<LabeledMarkerLayer<T>>
       side,
     );
     if (!r.overlaps(Offset.zero & camera.size)) return null;
-    return PlacedLabel(r, _renderer.content(label, res.style));
+    return PlacedLabel(
+      r,
+      _renderer.content(label, res.style, side.labelAlignment),
+    );
   };
 
   /// Labels live in their own screen-space overlay, NOT inside the markers:
